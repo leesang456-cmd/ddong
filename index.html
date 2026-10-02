@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>똥뿡 가계부</title>
-    <!-- Chart.js CDN -->
+    
+    <!-- 외부 필수 라이브러리 (Chart.js & SheetJS) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
     <style>
         :root {
             --primary-color: #ff5722;
@@ -142,7 +145,29 @@
             font-weight: 700;
         }
 
-        /* 필터 바 */
+        /* 컨트롤 영역 */
+        .action-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            background: white;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
         .filter-row {
             display: flex;
             gap: 8px;
@@ -195,7 +220,7 @@
         .record-left {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .badge {
@@ -224,19 +249,48 @@
 
         .record-right {
             text-align: right;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .amount-income { color: var(--income-color); font-weight: 700; font-size: 0.95rem; }
         .amount-expense { color: var(--expense-color); font-weight: 700; font-size: 0.95rem; }
 
-        .delete-btn {
+        .icon-btn {
             background: none;
             border: none;
-            color: #ccc;
-            font-size: 0.8rem;
+            color: var(--text-sub);
+            font-size: 0.85rem;
             padding: 4px;
-            margin-left: 8px;
             cursor: pointer;
+        }
+
+        /* 기간 선택 탭 */
+        .period-tab-group {
+            display: flex;
+            background: #e9ecef;
+            border-radius: 10px;
+            padding: 3px;
+            margin-bottom: 12px;
+        }
+
+        .period-tab {
+            flex: 1;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-sub);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .period-tab.active {
+            background: white;
+            color: var(--primary-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         }
 
         /* 바텀 네비게이션 */
@@ -275,7 +329,7 @@
             font-size: 1.2rem;
         }
 
-        /* FAB 플러스 버튼 */
+        /* FAB 버튼 */
         .fab {
             position: fixed;
             bottom: calc(var(--nav-height) + 16px);
@@ -405,7 +459,7 @@
                 <p>신혼부부 실시간 자산 다이어리</p>
             </div>
         </div>
-        <div id="current-month" style="font-size: 0.85rem; font-weight: 700; color: var(--text-sub);">2026년 9월</div>
+        <div id="current-month" style="font-size: 0.85rem; font-weight: 700; color: var(--text-sub);"></div>
     </div>
 
     <!-- 메인 컨테이너 -->
@@ -413,7 +467,6 @@
 
         <!-- 1. 입력/목록 탭 -->
         <div id="page-list" class="tab-page active">
-            <!-- 수지 현황 요약 카드 -->
             <div class="summary-card">
                 <div class="summary-title">이번 달 순 잔액</div>
                 <div class="summary-amount" id="net-total">0 원</div>
@@ -435,7 +488,11 @@
                 </div>
             </div>
 
-            <!-- 내역 리스트 필터 -->
+            <div class="action-bar">
+                <button class="btn-secondary" onclick="exportToExcel()">📊 엑셀 내보내기</button>
+                <button class="btn-secondary" onclick="openExcelModal()">📥 엑셀 불러오기</button>
+            </div>
+
             <div class="filter-row">
                 <select id="filter-person" class="filter-select" onchange="renderRecords()">
                     <option value="전체">전체 (남편+아내)</option>
@@ -449,7 +506,6 @@
                 </select>
             </div>
 
-            <!-- 최근 등록 내역 -->
             <div class="card">
                 <div class="card-header">
                     <h2>내역 리스트</h2>
@@ -462,10 +518,23 @@
 
         <!-- 2. 지출 통계 탭 -->
         <div id="page-stats" class="tab-page">
+            <div class="period-tab-group">
+                <div class="period-tab active" onclick="setPeriodType('month', this)">월별</div>
+                <div class="period-tab" onclick="setPeriodType('quarter', this)">분기별</div>
+                <div class="period-tab" onclick="setPeriodType('year', this)">연도별</div>
+                <div class="period-tab" onclick="setPeriodType('all', this)">전체</div>
+            </div>
+
+            <div class="card" style="padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; gap: 8px;" id="period-filter-controls">
+                    <select id="stats-year" class="filter-select" onchange="renderStatsCharts()"></select>
+                    <select id="stats-sub" class="filter-select" onchange="renderStatsCharts()"></select>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
-                    <h2>월별 지출 추이</h2>
-                    <select id="stats-year" class="filter-select" style="width: auto;" onchange="renderStatsCharts()"></select>
+                    <h2>선택 기간 지출 추이</h2>
                 </div>
                 <div class="chart-box">
                     <canvas id="monthlyChart"></canvas>
@@ -517,9 +586,19 @@
                 </div>
             </div>
 
+            <!-- 월별 자산 변동 추이 차트 -->
             <div class="card">
                 <div class="card-header">
-                    <h2>자산 비중 (포트폴리오)</h2>
+                    <h2>월별 자산 변동 추이 (누적 순자산)</h2>
+                </div>
+                <div class="chart-box">
+                    <canvas id="assetTrendChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>현재 자산 비중 (포트폴리오)</h2>
                 </div>
                 <div class="chart-box">
                     <canvas id="assetChart"></canvas>
@@ -528,7 +607,7 @@
 
             <div class="card">
                 <div class="card-header">
-                    <h2>자산 내역 및 수정</h2>
+                    <h2>자산 목록 및 관리</h2>
                     <button class="badge badge-husband" onclick="openAssetModal()" style="border:none; cursor:pointer;">+ 자산 추가</button>
                 </div>
                 <div id="asset-list-container"></div>
@@ -537,7 +616,7 @@
 
     </div>
 
-    <!-- FAB 내역 추가 버튼 -->
+    <!-- FAB 버튼 -->
     <button class="fab" onclick="openLedgerModal()">+</button>
 
     <!-- 바텀 네비게이션 -->
@@ -556,14 +635,15 @@
         </div>
     </div>
 
-    <!-- 내역 추가 모달 -->
+    <!-- 내역 추가 / 수정 모달 -->
     <div id="ledger-modal" class="modal">
         <div class="modal-content">
             <div class="card-header" style="margin-bottom: 20px;">
-                <h2>새 내역 입력</h2>
+                <h2 id="modal-title">새 내역 입력</h2>
                 <button onclick="closeLedgerModal()" style="background:none; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
             </div>
             <form id="ledger-form">
+                <input type="hidden" id="edit-id" value="">
                 <div class="form-row">
                     <div class="form-group" style="flex:1;">
                         <label>구분</label>
@@ -602,19 +682,20 @@
                     <input type="text" id="memo" class="form-control" placeholder="예: 이마트 장보기, 스타벅스">
                 </div>
 
-                <button type="submit" class="submit-btn">파이어베이스에 동기화 저장</button>
+                <button type="submit" class="submit-btn" id="submit-btn-text">동기화 저장</button>
             </form>
         </div>
     </div>
 
-    <!-- 자산 추가 모달 -->
+    <!-- 자산 추가 / 수정 모달 -->
     <div id="asset-modal" class="modal">
         <div class="modal-content">
             <div class="card-header" style="margin-bottom: 20px;">
-                <h2>자산 추가 / 수정</h2>
+                <h2 id="asset-modal-title">자산 추가</h2>
                 <button onclick="closeAssetModal()" style="background:none; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
             </div>
             <form id="asset-form">
+                <input type="hidden" id="asset-edit-id" value="">
                 <div class="form-group">
                     <label>자산 종류</label>
                     <select id="asset-type" class="form-control">
@@ -631,15 +712,38 @@
                     <label>금액 (원)</label>
                     <input type="number" id="asset-amount" class="form-control" placeholder="예: 1000000" min="0" required>
                 </div>
-                <button type="submit" class="submit-btn">자산 저장</button>
+                <button type="submit" class="submit-btn" id="asset-submit-btn">자산 저장</button>
             </form>
+        </div>
+    </div>
+
+    <!-- 엑셀 일괄 업로드 모달 -->
+    <div id="excel-modal" class="modal">
+        <div class="modal-content">
+            <div class="card-header" style="margin-bottom: 20px;">
+                <h2>엑셀 데이터 일괄 불러오기</h2>
+                <button onclick="closeExcelModal()" style="background:none; border:none; font-size:1.2rem; cursor:pointer;">✕</button>
+            </div>
+            <div style="margin-bottom: 15px; font-size: 0.85rem; color: var(--text-sub); line-height: 1.4;">
+                엑셀 파일(.xlsx)의 첫 번째 시트 데이터를 가계부에 한번에 등록합니다.<br>
+                아래 <b>샘플 양식</b>을 다운로드하여 양식에 맞게 작성 후 업로드해 주세요.
+            </div>
+            
+            <button class="btn-secondary" style="width: 100%; margin-bottom: 15px;" onclick="downloadExcelTemplate()">📄 엑셀 샘플 양식 다운로드</button>
+            
+            <div class="form-group">
+                <label>작성된 엑셀 파일 선택</label>
+                <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="form-control">
+            </div>
+
+            <button type="button" class="submit-btn" onclick="processExcelImport()">엑셀 데이터 가계부에 업로드</button>
         </div>
     </div>
 
     <!-- 파이어베이스 SDK (v9 모듈) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCgCY3XQWzq50D-0RIUoteofF1T_1z2aUZ8",
@@ -661,49 +765,54 @@
             window.records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderRecords();
             if (document.getElementById('page-stats').classList.contains('active')) renderStatsCharts();
+            if (document.getElementById('page-asset').classList.contains('active')) renderAssetTrendChart();
         });
 
         onSnapshot(collection(db, "assets"), (snapshot) => {
             window.assets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderAssets();
-            if (document.getElementById('page-asset').classList.contains('active')) renderAssetChart();
+            if (document.getElementById('page-asset').classList.contains('active')) {
+                renderAssetChart();
+                renderAssetTrendChart();
+            }
         });
 
-        window.addRecordToFB = async (record) => {
-            await addDoc(collection(db, "records"), record);
-        };
-
+        window.addRecordToFB = async (record) => { await addDoc(collection(db, "records"), record); };
+        window.updateRecordInFB = async (id, record) => { await updateDoc(doc(db, "records", id), record); };
         window.deleteRecordFromFB = async (id) => {
-            if (confirm('정말 삭제하시겠습니까?')) {
-                await deleteDoc(doc(db, "records", id));
-            }
+            if (confirm('정말 삭제하시겠습니까?')) await deleteDoc(doc(db, "records", id));
         };
 
-        window.addAssetToFB = async (asset) => {
-            await addDoc(collection(db, "assets"), asset);
-        };
-
+        window.addAssetToFB = async (asset) => { await addDoc(collection(db, "assets"), asset); };
+        window.updateAssetInFB = async (id, asset) => { await updateDoc(doc(db, "assets", id), asset); };
         window.deleteAssetFromFB = async (id) => {
-            if (confirm('이 자산 항목을 삭제하시겠습니까?')) {
-                await deleteDoc(doc(db, "assets", id));
-            }
+            if (confirm('이 자산 항목을 삭제하시겠습니까?')) await deleteDoc(doc(db, "assets", id));
         };
     </script>
 
-    <!-- 스크립트 메인 로직 -->
+    <!-- 메인 스크립트 로직 -->
     <script>
-        let monthlyChart, categoryChart, detailCategoryChart, personChart, assetChart;
+        let monthlyChart = null, categoryChart = null, detailCategoryChart = null, personChart = null, assetChart = null, assetTrendChart = null;
+        let currentPeriodType = 'month';
 
-        // 고정비 항목 리스트
         const fixedCategories = ['주거/공과금', '통신비', '보험료', '대출이자', '구독/렌탈', '교육/자기개발'];
-        // 변동비 항목 리스트
         const variableCategories = ['식비/외식', '장보기/마트', '교통/차량', '쇼핑/의류', '문화/취미', '의료/건강', '경조사/회비', '여행/휴가', '기타 지출'];
 
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('date').value = new Date().toISOString().substring(0, 10);
+            const today = new Date();
+            document.getElementById('date').value = today.toISOString().substring(0, 10);
+            document.getElementById('current-month').innerText = `${today.getFullYear()}년 ${today.getMonth() + 1}월`;
             updateCategoryOptions();
-            initYearFilter();
+            initStatsFilterControls();
         });
+
+        /* 차트 그릴 때 기존 차트를 안전하게 파괴하는 도우미 함수 */
+        function safelyDestroyChart(chartInstance) {
+            if (chartInstance && typeof chartInstance.destroy === 'function') {
+                chartInstance.destroy();
+            }
+            return null;
+        }
 
         function switchPage(pageId, element) {
             document.querySelectorAll('.tab-page').forEach(el => el.classList.remove('active'));
@@ -713,10 +822,13 @@
             element.classList.add('active');
 
             if (pageId === 'page-stats') renderStatsCharts();
-            if (pageId === 'page-asset') { renderAssets(); renderAssetChart(); }
+            if (pageId === 'page-asset') {
+                renderAssets();
+                renderAssetChart();
+                renderAssetTrendChart();
+            }
         }
 
-        // 수입/지출 유형 선택 시 카테고리 세부옵션 변경
         function updateCategoryOptions() {
             const type = document.getElementById('type').value;
             const categorySelect = document.getElementById('category');
@@ -740,41 +852,104 @@
             }
         }
 
-        function openLedgerModal() { document.getElementById('ledger-modal').classList.add('active'); }
-        function closeLedgerModal() { document.getElementById('ledger-modal').classList.remove('active'); }
-        function openAssetModal() { document.getElementById('asset-modal').classList.add('active'); }
-        function closeAssetModal() { document.getElementById('asset-modal').classList.remove('active'); }
+        function openLedgerModal(editId = null) {
+            const modal = document.getElementById('ledger-modal');
+            const title = document.getElementById('modal-title');
+            const submitBtn = document.getElementById('submit-btn-text');
+            const editInput = document.getElementById('edit-id');
 
-        // 내역 등록
+            if (editId) {
+                const target = (window.records || []).find(r => r.id === editId);
+                if (!target) return;
+
+                title.innerText = "내역 수정";
+                submitBtn.innerText = "수정 내용 저장";
+                editInput.value = target.id;
+
+                document.getElementById('type').value = target.type;
+                updateCategoryOptions();
+                document.getElementById('person').value = target.person;
+                document.getElementById('date').value = target.date;
+                document.getElementById('category').value = target.category;
+                document.getElementById('amount').value = target.amount;
+                document.getElementById('memo').value = target.memo || '';
+            } else {
+                title.innerText = "새 내역 입력";
+                submitBtn.innerText = "파이어베이스에 동기화 저장";
+                editInput.value = "";
+                document.getElementById('amount').value = "";
+                document.getElementById('memo').value = "";
+                document.getElementById('date').value = new Date().toISOString().substring(0, 10);
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeLedgerModal() { document.getElementById('ledger-modal').classList.remove('active'); }
+
+        function openAssetModal(editId = null) {
+            const modal = document.getElementById('asset-modal');
+            const title = document.getElementById('asset-modal-title');
+            const submitBtn = document.getElementById('asset-submit-btn');
+            const editInput = document.getElementById('asset-edit-id');
+
+            if (editId) {
+                const target = (window.assets || []).find(a => a.id === editId);
+                if (!target) return;
+
+                title.innerText = "자산 수정";
+                submitBtn.innerText = "자산 수정 내용 저장";
+                editInput.value = target.id;
+
+                document.getElementById('asset-type').value = target.type;
+                document.getElementById('asset-name').value = target.name;
+                document.getElementById('asset-amount').value = target.amount;
+            } else {
+                title.innerText = "자산 추가";
+                submitBtn.innerText = "자산 저장";
+                editInput.value = "";
+                document.getElementById('asset-name').value = "";
+                document.getElementById('asset-amount').value = "";
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeAssetModal() { document.getElementById('asset-modal').classList.remove('active'); }
+        function openExcelModal() { document.getElementById('excel-modal').classList.add('active'); }
+        function closeExcelModal() { document.getElementById('excel-modal').classList.remove('active'); }
+
         document.getElementById('ledger-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const editId = document.getElementById('edit-id').value;
             const categoryVal = document.getElementById('category').value;
             const typeVal = document.getElementById('type').value;
 
-            // 고정비 / 변동비 자동 판단
             let expenseGroup = '-';
             if (typeVal === '지출') {
                 expenseGroup = fixedCategories.includes(categoryVal) ? '고정비' : '변동비';
             }
 
-            const record = {
+            const recordData = {
                 type: typeVal,
                 person: document.getElementById('person').value,
                 date: document.getElementById('date').value,
                 category: categoryVal,
-                expenseGroup: expenseGroup, // 고정비 or 변동비
+                expenseGroup: expenseGroup,
                 amount: parseInt(document.getElementById('amount').value),
-                memo: document.getElementById('memo').value,
-                createdAt: new Date().getTime()
+                memo: document.getElementById('memo').value
             };
 
-            await window.addRecordToFB(record);
+            if (editId) {
+                await window.updateRecordInFB(editId, recordData);
+            } else {
+                recordData.createdAt = new Date().getTime();
+                await window.addRecordToFB(recordData);
+            }
+
             closeLedgerModal();
-            document.getElementById('amount').value = '';
-            document.getElementById('memo').value = '';
         });
 
-        // 목록 출력
         function renderRecords() {
             const container = document.getElementById('record-list-container');
             const personFilter = document.getElementById('filter-person').value;
@@ -786,7 +961,6 @@
 
             filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-            // 수지 집계
             let incomeTotal = 0, expenseTotal = 0;
             (window.records || []).forEach(r => {
                 if (r.type === '수입') incomeTotal += r.amount;
@@ -807,7 +981,6 @@
                 const isIncome = r.type === '수입';
                 const pBadge = r.person === '남편' ? 'badge-husband' : 'badge-wife';
                 
-                // 고정비/변동비 태그
                 let groupBadge = '';
                 if (r.type === '지출') {
                     const isFixed = r.expenseGroup === '고정비' || fixedCategories.includes(r.category);
@@ -827,7 +1000,8 @@
                             <span class="${isIncome ? 'amount-income' : 'amount-expense'}">
                                 ${isIncome ? '+' : '-'}${r.amount.toLocaleString()}원
                             </span>
-                            <button class="delete-btn" onclick="window.deleteRecordFromFB('${r.id}')">✕</button>
+                            <button class="icon-btn" onclick="openLedgerModal('${r.id}')">✏️</button>
+                            <button class="icon-btn" onclick="window.deleteRecordFromFB('${r.id}')">✕</button>
                         </div>
                     </div>
                 `;
@@ -835,32 +1009,83 @@
             container.innerHTML = html;
         }
 
-        function initYearFilter() {
-            const select = document.getElementById('stats-year');
+        function setPeriodType(type, element) {
+            currentPeriodType = type;
+            document.querySelectorAll('.period-tab').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+
+            initStatsFilterControls();
+            renderStatsCharts();
+        }
+
+        function initStatsFilterControls() {
+            const yearSelect = document.getElementById('stats-year');
+            const subSelect = document.getElementById('stats-sub');
             const currYear = new Date().getFullYear();
-            select.innerHTML = '';
-            for (let y = currYear - 2; y <= currYear + 2; y++) {
-                select.innerHTML += `<option value="${y}" ${y === currYear ? 'selected' : ''}>${y}년</option>`;
+            const currMonth = new Date().getMonth() + 1;
+
+            yearSelect.style.display = 'block';
+            subSelect.style.display = 'block';
+
+            if (yearSelect.options.length === 0) {
+                yearSelect.innerHTML = '';
+                for (let y = currYear - 2; y <= currYear + 2; y++) {
+                    yearSelect.innerHTML += `<option value="${y}" ${y === currYear ? 'selected' : ''}>${y}년</option>`;
+                }
+            }
+
+            subSelect.innerHTML = '';
+            if (currentPeriodType === 'month') {
+                for (let m = 1; m <= 12; m++) {
+                    subSelect.innerHTML += `<option value="${m}" ${m === currMonth ? 'selected' : ''}>${m}월</option>`;
+                }
+            } else if (currentPeriodType === 'quarter') {
+                const currQuarter = Math.ceil(currMonth / 3);
+                for (let q = 1; q <= 4; q++) {
+                    subSelect.innerHTML += `<option value="${q}" ${q === currQuarter ? 'selected' : ''}>${q}분기 (Q${q})</option>`;
+                }
+            } else if (currentPeriodType === 'year') {
+                subSelect.style.display = 'none';
+            } else if (currentPeriodType === 'all') {
+                yearSelect.style.display = 'none';
+                subSelect.style.display = 'none';
             }
         }
 
-        // 통계 그래프 출력
         function renderStatsCharts() {
-            const year = parseInt(document.getElementById('stats-year').value);
-            const expenses = (window.records || []).filter(r => r.type === '지출' && new Date(r.date).getFullYear() === year);
+            if (typeof Chart === 'undefined') return;
 
-            const monthlyData = Array(12).fill(0);
+            const year = parseInt(document.getElementById('stats-year').value);
+            const subVal = parseInt(document.getElementById('stats-sub').value);
+
+            let expenses = (window.records || []).filter(r => r.type === '지출');
+
+            if (currentPeriodType === 'month') {
+                expenses = expenses.filter(r => {
+                    const d = new Date(r.date);
+                    return d.getFullYear() === year && (d.getMonth() + 1) === subVal;
+                });
+            } else if (currentPeriodType === 'quarter') {
+                expenses = expenses.filter(r => {
+                    const d = new Date(r.date);
+                    const q = Math.ceil((d.getMonth() + 1) / 3);
+                    return d.getFullYear() === year && q === subVal;
+                });
+            } else if (currentPeriodType === 'year') {
+                expenses = expenses.filter(r => new Date(r.date).getFullYear() === year);
+            }
+
             let fixedSum = 0, varSum = 0, husbandSum = 0, wifeSum = 0;
             const detailMap = {};
+            const trendMap = {};
 
             expenses.forEach(r => {
-                const m = new Date(r.date).getMonth();
-                monthlyData[m] += r.amount;
+                const d = new Date(r.date);
+                const periodKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                trendMap[periodKey] = (trendMap[periodKey] || 0) + r.amount;
 
-                // 세부 항목 집계
                 detailMap[r.category] = (detailMap[r.category] || 0) + r.amount;
 
-                // 고정비 vs 변동비
                 const isFixed = r.expenseGroup === '고정비' || fixedCategories.includes(r.category);
                 if (isFixed) fixedSum += r.amount;
                 else varSum += r.amount;
@@ -869,68 +1094,173 @@
                 if (r.person === '아내') wifeSum += r.amount;
             });
 
-            if (monthlyChart) monthlyChart.destroy();
-            if (categoryChart) categoryChart.destroy();
-            if (detailCategoryChart) detailCategoryChart.destroy();
-            if (personChart) personChart.destroy();
+            monthlyChart = safelyDestroyChart(monthlyChart);
+            categoryChart = safelyDestroyChart(categoryChart);
+            detailCategoryChart = safelyDestroyChart(detailCategoryChart);
+            personChart = safelyDestroyChart(personChart);
 
-            // 월별 차트
-            monthlyChart = new Chart(document.getElementById('monthlyChart'), {
-                type: 'bar',
-                data: {
-                    labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
-                    datasets: [{ label: '지출액', data: monthlyData, backgroundColor: '#ff5722', borderRadius: 6 }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+            const trendLabels = Object.keys(trendMap).sort();
+            const trendValues = trendLabels.map(k => trendMap[k]);
 
-            // 세부 항목별 차트 (Top 항목)
+            const ctxMonthly = document.getElementById('monthlyChart');
+            if (ctxMonthly) {
+                monthlyChart = new Chart(ctxMonthly, {
+                    type: 'bar',
+                    data: {
+                        labels: trendLabels.length ? trendLabels : ['내역 없음'],
+                        datasets: [{ label: '지출액', data: trendValues.length ? trendValues : [0], backgroundColor: '#ff5722', borderRadius: 6 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
             const detailLabels = Object.keys(detailMap);
             const detailValues = Object.values(detailMap);
             const detailColors = ['#ff6384', '#36a2eb', '#cc65fe', '#ffce56', '#4bc0c0', '#9966ff', '#ff9f40', '#8c7ae6', '#e1b12c'];
 
-            detailCategoryChart = new Chart(document.getElementById('detailCategoryChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: detailLabels.length ? detailLabels : ['데이터 없음'],
-                    datasets: [{ data: detailValues.length ? detailValues : [1], backgroundColor: detailColors }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+            const ctxDetail = document.getElementById('detailCategoryChart');
+            if (ctxDetail) {
+                detailCategoryChart = new Chart(ctxDetail, {
+                    type: 'doughnut',
+                    data: {
+                        labels: detailLabels.length ? detailLabels : ['데이터 없음'],
+                        datasets: [{ data: detailValues.length ? detailValues : [1], backgroundColor: detailColors }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
 
-            // 고정비 vs 변동비 차트
-            categoryChart = new Chart(document.getElementById('categoryChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: ['고정비', '변동비'],
-                    datasets: [{ data: [fixedSum, varSum], backgroundColor: ['#ff9800', '#4caf50'] }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+            const ctxCategory = document.getElementById('categoryChart');
+            if (ctxCategory) {
+                categoryChart = new Chart(ctxCategory, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['고정비', '변동비'],
+                        datasets: [{ data: [fixedSum, varSum], backgroundColor: ['#ff9800', '#4caf50'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
 
-            // 남편 vs 아내 차트
-            personChart = new Chart(document.getElementById('personChart'), {
-                type: 'bar',
-                data: {
-                    labels: ['남편', '아내'],
-                    datasets: [{ label: '지출액', data: [husbandSum, wifeSum], backgroundColor: ['#2196f3', '#e91e63'], borderRadius: 6 }]
-                },
-                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
-            });
+            const ctxPerson = document.getElementById('personChart');
+            if (ctxPerson) {
+                personChart = new Chart(ctxPerson, {
+                    type: 'bar',
+                    data: {
+                        labels: ['남편', '아내'],
+                        datasets: [{ label: '지출액', data: [husbandSum, wifeSum], backgroundColor: ['#2196f3', '#e91e63'], borderRadius: 6 }]
+                    },
+                    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
+                });
+            }
         }
 
-        // 자산 관련 로직
+        function exportToExcel() {
+            if (!(window.records && window.records.length)) {
+                alert('내보낼 가계부 내역이 없습니다.');
+                return;
+            }
+
+            const excelData = window.records.map(r => ({
+                '날짜': r.date,
+                '구분': r.type,
+                '주체': r.person,
+                '상세항목': r.category,
+                '고정/변동': r.expenseGroup || '-',
+                '금액': r.amount,
+                '메모': r.memo || ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "가계부 내역");
+
+            const todayStr = new Date().toISOString().substring(0, 10).replace(/-/g, '');
+            XLSX.writeFile(workbook, `똥뿡가계부_내역_${todayStr}.xlsx`);
+        }
+
+        function downloadExcelTemplate() {
+            const sampleData = [
+                { '날짜': '2026-09-01', '구분': '지출', '주체': '남편', '상세항목': '식비/외식', '금액': 35000, '메모': '주말 외식' },
+                { '날짜': '2026-09-05', '구분': '지출', '주체': '아내', '상세항목': '주거/공과금', '금액': 120000, '메모': '전기요금' },
+                { '날짜': '2026-09-10', '구분': '수입', '주체': '남편', '상세항목': '월급', '금액': 3500000, '메모': '9월 급여' }
+            ];
+
+            const worksheet = XLSX.utils.json_to_sheet(sampleData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "샘플양식");
+
+            XLSX.writeFile(workbook, `똥뿡가계부_업로드_샘플.xlsx`);
+        }
+
+        async function processExcelImport() {
+            const fileInput = document.getElementById('excel-file-input');
+            if (!fileInput.files.length) {
+                alert('업로드할 엑셀 파일을 선택해 주세요.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
+
+                    if (!rows.length) {
+                        alert('엑셀 파일에 데이터가 없습니다.');
+                        return;
+                    }
+
+                    let count = 0;
+                    for (const row of rows) {
+                        const date = row['날짜'];
+                        const type = row['구분'] || '지출';
+                        const person = row['주체'] || '남편';
+                        const category = row['상세항목'] || '기타 지출';
+                        const amount = parseInt(row['금액']) || 0;
+                        const memo = row['메모'] || '';
+
+                        if (date && amount > 0) {
+                            const expenseGroup = type === '지출' ? (fixedCategories.includes(category) ? '고정비' : '변동비') : '-';
+                            await window.addRecordToFB({
+                                date, type, person, category, expenseGroup, amount, memo,
+                                createdAt: new Date().getTime()
+                            });
+                            count++;
+                        }
+                    }
+
+                    alert(`${count}개의 가계부 내역이 성공적으로 업로드되었습니다!`);
+                    closeExcelModal();
+                    fileInput.value = '';
+                } catch (err) {
+                    alert('엑셀 파일 분석 중 오류가 발생했습니다. 양식을 확인해 주세요.');
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
         document.getElementById('asset-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const asset = {
+            const editId = document.getElementById('asset-edit-id').value;
+            const assetData = {
                 type: document.getElementById('asset-type').value,
                 name: document.getElementById('asset-name').value,
                 amount: parseInt(document.getElementById('asset-amount').value)
             };
-            await window.addAssetToFB(asset);
+
+            if (editId) {
+                await window.updateAssetInFB(editId, assetData);
+            } else {
+                await window.addAssetToFB(assetData);
+            }
+
             closeAssetModal();
-            document.getElementById('asset-name').value = '';
-            document.getElementById('asset-amount').value = '';
         });
 
         function renderAssets() {
@@ -964,7 +1294,8 @@
                         </div>
                         <div class="record-right">
                             <span style="font-weight:700;">${a.amount.toLocaleString()}원</span>
-                            <button class="delete-btn" onclick="window.deleteAssetFromFB('${a.id}')">✕</button>
+                            <button class="icon-btn" onclick="openAssetModal('${a.id}')">✏️</button>
+                            <button class="icon-btn" onclick="window.deleteAssetFromFB('${a.id}')">✕</button>
                         </div>
                     </div>
                 `;
@@ -973,6 +1304,8 @@
         }
 
         function renderAssetChart() {
+            if (typeof Chart === 'undefined') return;
+
             let stock = 0, savings = 0, deposit = 0;
             (window.assets || []).forEach(a => {
                 if (a.type === '주식') stock += a.amount;
@@ -980,15 +1313,98 @@
                 if (a.type === '예금') deposit += a.amount;
             });
 
-            if (assetChart) assetChart.destroy();
-            assetChart = new Chart(document.getElementById('assetChart'), {
-                type: 'pie',
-                data: {
-                    labels: ['주식', '적금', '예금'],
-                    datasets: [{ data: [stock, savings, deposit], backgroundColor: ['#9c27b0', '#00bcd4', '#ff9800'] }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
+            assetChart = safelyDestroyChart(assetChart);
+
+            const ctx = document.getElementById('assetChart');
+            if (ctx) {
+                assetChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: ['주식', '적금', '예금'],
+                        datasets: [{ data: [stock, savings, deposit], backgroundColor: ['#9c27b0', '#00bcd4', '#ff9800'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        }
+
+        function renderAssetTrendChart() {
+            if (typeof Chart === 'undefined') return;
+
+            let totalCurrentAsset = 0;
+            (window.assets || []).forEach(a => totalCurrentAsset += a.amount);
+
+            const monthlyNetChange = {};
+            (window.records || []).forEach(r => {
+                if (!r.date) return;
+                const d = new Date(r.date);
+                if (isNaN(d.getTime())) return;
+
+                const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyNetChange[monthKey]) monthlyNetChange[monthKey] = 0;
+                
+                if (r.type === '수입') monthlyNetChange[monthKey] += r.amount;
+                if (r.type === '지출') monthlyNetChange[monthKey] -= r.amount;
             });
+
+            const sortedMonths = Object.keys(monthlyNetChange).sort();
+
+            if (sortedMonths.length === 0) {
+                const currentMonthKey = new Date().toISOString().substring(0, 7);
+                sortedMonths.push(currentMonthKey);
+                monthlyNetChange[currentMonthKey] = 0;
+            }
+
+            const monthData = [];
+            let runningAsset = totalCurrentAsset;
+
+            for (let i = sortedMonths.length - 1; i >= 0; i--) {
+                const monthKey = sortedMonths[i];
+                monthData.unshift({
+                    month: monthKey,
+                    assetTotal: runningAsset
+                });
+                runningAsset -= (monthlyNetChange[monthKey] || 0);
+            }
+
+            const labels = monthData.map(d => d.month);
+            const values = monthData.map(d => d.assetTotal);
+
+            assetTrendChart = safelyDestroyChart(assetTrendChart);
+
+            const ctx = document.getElementById('assetTrendChart');
+            if (ctx) {
+                assetTrendChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '월별 자산 (원)',
+                            data: values,
+                            borderColor: '#2ec4b6',
+                            backgroundColor: 'rgba(46, 196, 182, 0.15)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                ticks: {
+                                    callback: function(value) {
+                                        return (value / 10000).toLocaleString() + '만';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
     </script>
 </body>
